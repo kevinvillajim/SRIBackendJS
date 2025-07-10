@@ -1,0 +1,74 @@
+{
+    "secuencial": "000000001",
+    "infoFactura": {
+      "fechaEmision": "10/07/2025",
+      "dirEstablecimiento": "Av. Principal 123, Quito, Ecuador",
+      "obligadoContabilidad": "SI",
+      "tipoIdentificacionComprador": "05",
+      "razonSocialComprador": "JUAN CARLOS PEREZ LOPEZ",
+      "identificacionComprador": "1712345678",
+      "direccionComprador": "Av. Amazonas 456, Quito, Ecuador",
+      "totalSinImpuestos": "100.00",
+      "totalDescuento": "0.00",
+      "totalConImpuestos": {
+        "totalImpuesto": [
+          {
+            "codigo": "2",
+            "codigoPorcentaje": "2",
+            "descuentoAdicional": "0.00",
+            "baseImponible": "100.00",
+            "tarifa": "12.00",
+            "valor": "12.00"
+          }
+        ]
+      },
+      "importeTotal": "112.00",
+      "moneda": "DOLAR",
+      "pagos": {
+        "pago": [
+          {
+            "formaPago": "01",
+            "total": "112.00",
+            "plazo": "30",
+            "unidadTiempo": "dias"
+          }
+        ]
+      }
+    },
+    "detalles": {
+      "detalle": [
+        {
+          "codigoPrincipal": "PROD001",
+          "codigoAuxiliar": "AUX001",
+          "descripcion": "Producto de prueba para facturación",
+          "cantidad": "1.000000",
+          "precioUnitario": "100.000000",
+          "descuento": "0.00",
+          "precioTotalSinImpuesto": "100.00",
+          "impuestos": {
+            "impuesto": [
+              {
+                "codigo": "2",
+                "codigoPorcentaje": "2",
+                "tarifa": "12.00",
+                "baseImponible": "100.00",
+                "valor": "12.00"
+              }
+            ]
+          }
+        }
+      ]
+    },
+    "infoAdicional": {
+      "campoAdicional": [
+        {
+          "@nombre": "Email",
+          "#": "cliente@ejemplo.com"
+        },
+        {
+          "@nombre": "Telefono",
+          "#": "0998765432"
+        }
+      ]
+    }
+  }

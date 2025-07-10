@@ -1,0 +1,85 @@
+# Pruebas para el módulo de certificados
+# Usar con REST Client extension en VS Code
+
+### 1. Verificar que el usuario existe
+GET http://localhost:3006/api/users/1
+
+### 2. Obtener estado inicial del certificado
+GET http://localhost:3006/api/users/1/certificate/status
+
+### 3. Subir certificado (requiere archivo .p12 real)
+# NOTA: Este endpoint requiere un archivo multipart/form-data
+# En Postman:
+# - Method: POST
+# - URL: http://localhost:3006/api/users/1/certificate
+# - Body: form-data
+#   - Key: certificate (File)
+#   - Key: password (Text)
+
+POST http://localhost:3006/api/users/1/certificate
+Content-Type: multipart/form-data; boundary=----WebKitFormBoundary
+
+------WebKitFormBoundary
+Content-Disposition: form-data; name="certificate"; filename="test.p12"
+Content-Type: application/x-pkcs12
+
+[Binary data aquí - usar Postman para esta prueba]
+------WebKitFormBoundary
+Content-Disposition: form-data; name="password"
+
+mi_password_del_certificado
+------WebKitFormBoundary--
+
+### 4. Verificar estado después de subir
+GET http://localhost:3006/api/users/1/certificate/status
+
+### 5. Validar certificado con contraseña
+POST http://localhost:3006/api/users/1/certificate/validate
+Content-Type: application/json
+
+{
+  "password": "mi_password_del_certificado"
+}
+
+### 6. Desactivar certificado
+PUT http://localhost:3006/api/users/1/certificate/toggle
+Content-Type: application/json
+
+{
+  "active": false
+}
+
+### 7. Activar certificado nuevamente
+PUT http://localhost:3006/api/users/1/certificate/toggle
+Content-Type: application/json
+
+{
+  "active": true
+}
+
+### 8. Eliminar certificado
+DELETE http://localhost:3006/api/users/1/certificate
+
+### 9. Verificar que se eliminó
+GET http://localhost:3006/api/users/1/certificate/status
+
+### Casos de error
+
+### 10. Intentar subir sin archivo
+POST http://localhost:3006/api/users/1/certificate
+Content-Type: application/json
+
+{
+  "password": "test"
+}
+
+### 11. Intentar obtener certificado de usuario inexistente
+GET http://localhost:3006/api/users/999/certificate/status
+
+### 12. Intentar activar certificado sin tenerlo
+PUT http://localhost:3006/api/users/1/certificate/toggle
+Content-Type: application/json
+
+{
+  "active": true
+}

@@ -1,0 +1,232 @@
+# Pruebas para el módulo de facturación
+# Usar con REST Client extension en VS Code
+
+### 1. Verificar que el usuario tiene certificado activo
+GET http://localhost:3006/api/users/1/certificate/status
+
+### 2. Generar factura completa
+POST http://localhost:3006/api/billing/generate/1
+Content-Type: application/json
+
+{
+  "secuencial": "000000001",
+  "infoFactura": {
+    "fechaEmision": "10/07/2025",
+    "dirEstablecimiento": "Av. Principal 123, Quito, Ecuador",
+    "obligadoContabilidad": "SI",
+    "tipoIdentificacionComprador": "05",
+    "razonSocialComprador": "JUAN CARLOS PEREZ LOPEZ",
+    "identificacionComprador": "1712345678",
+    "direccionComprador": "Av. Amazonas 456, Quito, Ecuador",
+    "totalSinImpuestos": "100.00",
+    "totalDescuento": "0.00",
+    "totalConImpuestos": {
+      "totalImpuesto": [
+        {
+          "codigo": "2",
+          "codigoPorcentaje": "2",
+          "descuentoAdicional": "0.00",
+          "baseImponible": "100.00",
+          "tarifa": "12.00",
+          "valor": "12.00"
+        }
+      ]
+    },
+    "importeTotal": "112.00",
+    "moneda": "DOLAR",
+    "pagos": {
+      "pago": [
+        {
+          "formaPago": "01",
+          "total": "112.00",
+          "plazo": "30",
+          "unidadTiempo": "dias"
+        }
+      ]
+    }
+  },
+  "detalles": {
+    "detalle": [
+      {
+        "codigoPrincipal": "PROD001",
+        "codigoAuxiliar": "AUX001",
+        "descripcion": "Producto de prueba para facturación",
+        "cantidad": "1.000000",
+        "precioUnitario": "100.000000",
+        "descuento": "0.00",
+        "precioTotalSinImpuesto": "100.00",
+        "impuestos": {
+          "impuesto": [
+            {
+              "codigo": "2",
+              "codigoPorcentaje": "2",
+              "tarifa": "12.00",
+              "baseImponible": "100.00",
+              "valor": "12.00"
+            }
+          ]
+        }
+      }
+    ]
+  },
+  "infoAdicional": {
+    "campoAdicional": [
+      {
+        "@nombre": "Email",
+        "#": "cliente@ejemplo.com"
+      },
+      {
+        "@nombre": "Telefono",
+        "#": "0998765432"
+      }
+    ]
+  }
+}
+
+### 3. Obtener operación específica (cambiar ID según respuesta anterior)
+GET http://localhost:3006/api/billing/operation/1
+
+### 4. Obtener todas las operaciones del usuario
+GET http://localhost:3006/api/billing/user/1/operations
+
+### 5. Obtener operaciones con paginación
+GET http://localhost:3006/api/billing/user/1/operations?page=1&limit=5
+
+### Casos de error
+
+### 6. Intentar facturar sin certificado activo
+POST http://localhost:3006/api/billing/generate/999
+Content-Type: application/json
+
+{
+  "infoFactura": {
+    "fechaEmision": "10/07/2025"
+  },
+  "detalles": {
+    "detalle": []
+  }
+}
+
+### 7. Datos de factura inválidos
+POST http://localhost:3006/api/billing/generate/1
+Content-Type: application/json
+
+{
+  "infoFactura": {
+    "fechaEmision": "fecha-inválida"
+  }
+}
+
+### 8. Sin detalles de factura
+POST http://localhost:3006/api/billing/generate/1
+Content-Type: application/json
+
+{
+  "infoFactura": {
+    "fechaEmision": "10/07/2025",
+    "dirEstablecimiento": "Test",
+    "obligadoContabilidad": "SI",
+    "tipoIdentificacionComprador": "05",
+    "razonSocialComprador": "TEST",
+    "identificacionComprador": "1234567890",
+    "direccionComprador": "Test",
+    "totalSinImpuestos": "100.00",
+    "totalDescuento": "0.00",
+    "totalConImpuestos": {
+      "totalImpuesto": []
+    },
+    "importeTotal": "100.00",
+    "moneda": "DOLAR",
+    "pagos": {
+      "pago": []
+    }
+  },
+  "detalles": {
+    "detalle": []
+  }
+}
+
+### 9. Factura con múltiples productos
+POST http://localhost:3006/api/billing/generate/1
+Content-Type: application/json
+
+{
+  "secuencial": "000000002",
+  "infoFactura": {
+    "fechaEmision": "10/07/2025",
+    "dirEstablecimiento": "Av. Principal 123, Quito, Ecuador",
+    "obligadoContabilidad": "SI",
+    "tipoIdentificacionComprador": "04",
+    "razonSocialComprador": "EMPRESA CLIENTE S.A.",
+    "identificacionComprador": "1792345678001",
+    "direccionComprador": "Av. Eloy Alfaro 789, Quito, Ecuador",
+    "totalSinImpuestos": "250.00",
+    "totalDescuento": "10.00",
+    "totalConImpuestos": {
+      "totalImpuesto": [
+        {
+          "codigo": "2",
+          "codigoPorcentaje": "2",
+          "descuentoAdicional": "0.00",
+          "baseImponible": "240.00",
+          "tarifa": "12.00",
+          "valor": "28.80"
+        }
+      ]
+    },
+    "importeTotal": "268.80",
+    "moneda": "DOLAR",
+    "pagos": {
+      "pago": [
+        {
+          "formaPago": "20",
+          "total": "268.80",
+          "plazo": "0",
+          "unidadTiempo": "dias"
+        }
+      ]
+    }
+  },
+  "detalles": {
+    "detalle": [
+      {
+        "codigoPrincipal": "PROD001",
+        "descripcion": "Producto A",
+        "cantidad": "2.000000",
+        "precioUnitario": "75.000000",
+        "descuento": "5.00",
+        "precioTotalSinImpuesto": "145.00",
+        "impuestos": {
+          "impuesto": [
+            {
+              "codigo": "2",
+              "codigoPorcentaje": "2",
+              "tarifa": "12.00",
+              "baseImponible": "145.00",
+              "valor": "17.40"
+            }
+          ]
+        }
+      },
+      {
+        "codigoPrincipal": "PROD002",
+        "descripcion": "Producto B",
+        "cantidad": "1.000000",
+        "precioUnitario": "100.000000",
+        "descuento": "5.00",
+        "precioTotalSinImpuesto": "95.00",
+        "impuestos": {
+          "impuesto": [
+            {
+              "codigo": "2",
+              "codigoPorcentaje": "2",
+              "tarifa": "12.00",
+              "baseImponible": "95.00",
+              "valor": "11.40"
+            }
+          ]
+        }
+      }
+    ]
+  }
+}
