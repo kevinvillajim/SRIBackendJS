@@ -8,13 +8,13 @@ const {
   getUserOperations
 } = require('../controllers/billingController');
 
-// Importar validaciones
+// Importar validaciones - CORREGIDO: billingValidation -> billingValidator
 const {
   validateBillingData,
   validateUserIdParam,
   sanitizeBillingData,
   validateOptionalBillingData
-} = require('../middleware/billingValidation');
+} = require('../middleware/billingValidator');
 
 // POST /api/billing/generate/:userId - Generar factura
 router.post('/generate/:userId',

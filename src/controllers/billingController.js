@@ -1,7 +1,7 @@
 const User = require('../models/User');
 const Operation = require('../models/Operation');
 const Document = require('../models/Document');
-const { asyncHandler, createError } = require('../middleware/errorHandler');
+const { asyncHandler } = require('../middleware/errorHandler');
 const { success, created, notFound, badRequest, serverError } = require('../utils/responses');
 const { decryptCertificatePassword } = require('../utils/encryption');
 const { certificateFileExists } = require('../middleware/upload');
@@ -25,18 +25,17 @@ const generateBilling = asyncHandler(async (req, res) => {
 
   console.log('🧾 Iniciando proceso de facturación para usuario:', userId);
 
-  // 1. Verificar que el usuario existe
+  // Verificar usuario
   const user = await User.findById(userId);
   if (!user) {
     return notFound(res, 'Usuario no encontrado');
   }
 
-  // 2. Verificar que el usuario tiene certificado activo
+  // Verificar certificado
   if (!user.tiene_certificado || !user.certificado_activo || !user.certificado_filename) {
     return badRequest(res, 'El usuario no tiene un certificado activo');
   }
 
-  // 3. Verificar que el archivo de certificado existe
   if (!certificateFileExists(user.certificado_filename)) {
     await User.toggleCertificate(userId, false);
     return badRequest(res, 'Archivo de certificado no encontrado');
@@ -45,9 +44,7 @@ const generateBilling = asyncHandler(async (req, res) => {
   let operation = null;
 
   try {
-    console.log('🧾 Preparando datos de facturación...');
-
-    // 4. Preparar datos para open-factura
+    // Preparar datos para open-factura
     const invoiceInput = {
       infoTributaria: {
         ambiente: user.ambiente,
@@ -55,7 +52,7 @@ const generateBilling = asyncHandler(async (req, res) => {
         razonSocial: user.razon_social,
         nombreComercial: user.nombre_comercial || user.razon_social,
         ruc: user.ruc,
-        codDoc: "01", // Factura
+        codDoc: "01",
         estab: user.establecimiento,
         ptoEmi: user.punto_emision,
         secuencial: generateSequential(billingData.secuencial),
@@ -76,20 +73,17 @@ const generateBilling = asyncHandler(async (req, res) => {
       infoAdicional: billingData.infoAdicional
     };
 
-    console.log('🧾 Generando factura con open-factura...');
-
-    // 5. Generar factura con open-factura
+    // Generar factura
     const { invoice, accessKey } = generateInvoice(invoiceInput);
-    
-    console.log('🧾 Factura generada. Clave de acceso:', accessKey);
+    console.log('✅ Factura generada. Clave de acceso:', accessKey);
 
-    // 6. Verificar que no existe operación con la misma clave de acceso
+    // Verificar operación duplicada
     const existingOperation = await Operation.findByAccessKey(accessKey);
     if (existingOperation) {
       return badRequest(res, 'Ya existe una operación con esta clave de acceso');
     }
 
-    // 7. Crear operación en base de datos
+    // Crear operación
     operation = await Operation.create({
       usuario_id: userId,
       clave_acceso: accessKey,
@@ -99,13 +93,11 @@ const generateBilling = asyncHandler(async (req, res) => {
       estado: 'xml_generado'
     });
 
-    console.log('🧾 Operación creada con ID:', operation.id);
-
-    // 8. Generar XML
-    console.log('🧾 Generando XML...');
+    // Generar XML
     const invoiceXml = generateInvoiceXml(invoice);
+    console.log('✅ XML generado');
 
-    // 9. Guardar XML original
+    // Guardar XML original
     await Document.create({
       operacion_id: operation.id,
       tipo_documento: 'original',
@@ -114,10 +106,7 @@ const generateBilling = asyncHandler(async (req, res) => {
       clave_acceso: accessKey
     });
 
-    console.log('🧾 XML original guardado');
-
-    // 10. Cargar certificado y contraseña
-    console.log('🧾 Cargando certificado...');
+    // Cargar certificado
     const certificatePath = path.join(config.paths.certificates, user.certificado_filename);
     const p12Buffer = getP12FromLocalFile(certificatePath);
     const certificatePassword = decryptCertificatePassword(user.certificado_password);
@@ -126,111 +115,172 @@ const generateBilling = asyncHandler(async (req, res) => {
       throw new Error('No se pudo cargar el certificado');
     }
 
-    // 11. Firmar XML
-    console.log('🧾 Firmando XML...');
-    await Operation.updateStatus(operation.id, 'firmado');
-
-    const signedXml = await signXml(p12Buffer, certificatePassword, invoiceXml);
-
-    // 12. Guardar XML firmado
-    await Document.create({
-      operacion_id: operation.id,
-      tipo_documento: 'firmado',
-      contenido_xml: signedXml,
-      nombre_archivo: `factura_${accessKey}_firmado.xml`,
-      clave_acceso: accessKey
-    });
-
-    console.log('🧾 XML firmado y guardado');
-
-    // 13. Enviar al SRI para recepción
-    console.log('🧾 Enviando al SRI...');
-    await Operation.updateStatus(operation.id, 'enviado');
-
-    const receptionUrl = user.ambiente === '1' 
-      ? config.sri.reception.test 
-      : config.sri.reception.prod;
-
-    const receptionResult = await documentReception(signedXml, receptionUrl);
+    // Intentar firmado con manejo de errores específico
+    console.log('🔐 Intentando firmar XML...');
     
-    console.log('🧾 Respuesta de recepción SRI:', receptionResult);
-    await Operation.updateReceptionResponse(operation.id, receptionResult);
-
-    // 14. Autorizar documento
-    console.log('🧾 Solicitando autorización...');
-    
-    const authorizationUrl = user.ambiente === '1' 
-      ? config.sri.authorization.test 
-      : config.sri.authorization.prod;
-
-    const authorizationResult = await documentAuthorization(accessKey, authorizationUrl);
-    
-    console.log('🧾 Respuesta de autorización SRI:', authorizationResult);
-
-    // 15. Procesar respuesta de autorización
-    let numeroAutorizacion = null;
-    let estadoFinal = 'rechazado';
-
-    if (authorizationResult && authorizationResult.RespuestaAutorizacionComprobante) {
-      const autorizaciones = authorizationResult.RespuestaAutorizacionComprobante.autorizaciones;
-      if (autorizaciones && autorizaciones.autorizacion) {
-        const autorizacion = Array.isArray(autorizaciones.autorizacion) 
-          ? autorizaciones.autorizacion[0] 
-          : autorizaciones.autorizacion;
-        
-        if (autorizacion.estado === 'AUTORIZADO') {
-          numeroAutorizacion = autorizacion.numeroAutorizacion;
-          estadoFinal = 'autorizado';
-        }
+    try {
+      // Limpiar XML antes de firmar
+      let cleanXml = invoiceXml.trim();
+      
+      // Agregar encoding si no existe
+      if (!cleanXml.includes('encoding=')) {
+        cleanXml = cleanXml.replace('<?xml version="1.0"?>', '<?xml version="1.0" encoding="UTF-8"?>');
       }
+      
+      console.log('🔧 DEBUG: Iniciando firmado con parámetros:');
+      console.log('🔧 DEBUG: - p12Buffer type:', typeof p12Buffer);
+      console.log('🔧 DEBUG: - p12Buffer length:', p12Buffer.byteLength);
+      console.log('🔧 DEBUG: - password length:', certificatePassword.length);
+      console.log('🔧 DEBUG: - xml length:', cleanXml.length);
+      
+      const signedXml = await signXml(p12Buffer, certificatePassword, cleanXml);
+      
+      console.log('✅ XML firmado exitosamente');
+      await Operation.updateStatus(operation.id, 'firmado');
+
+      // Guardar XML firmado
+      await Document.create({
+        operacion_id: operation.id,
+        tipo_documento: 'firmado',
+        contenido_xml: signedXml,
+        nombre_archivo: `factura_${accessKey}_firmado.xml`,
+        clave_acceso: accessKey
+      });
+
+      // Continuar con envío al SRI
+      console.log('📤 Enviando al SRI...');
+      await Operation.updateStatus(operation.id, 'enviado');
+
+      try {
+        const receptionUrl = user.ambiente === '1' 
+          ? config.sri.reception.test 
+          : config.sri.reception.prod;
+
+        const receptionResult = await documentReception(signedXml, receptionUrl);
+        console.log('✅ Respuesta de recepción SRI:', receptionResult);
+        await Operation.updateReceptionResponse(operation.id, receptionResult);
+
+        // Autorizar documento
+        console.log('📋 Solicitando autorización...');
+        
+        const authorizationUrl = user.ambiente === '1' 
+          ? config.sri.authorization.test 
+          : config.sri.authorization.prod;
+
+        const authorizationResult = await documentAuthorization(accessKey, authorizationUrl);
+        console.log('✅ Respuesta de autorización SRI:', authorizationResult);
+
+        // Procesar respuesta de autorización
+        let numeroAutorizacion = null;
+        let estadoFinal = 'rechazado';
+
+        if (authorizationResult && authorizationResult.RespuestaAutorizacionComprobante) {
+          const autorizaciones = authorizationResult.RespuestaAutorizacionComprobante.autorizaciones;
+          if (autorizaciones && autorizaciones.autorizacion) {
+            const autorizacion = Array.isArray(autorizaciones.autorizacion) 
+              ? autorizaciones.autorizacion[0] 
+              : autorizaciones.autorizacion;
+            
+            if (autorizacion.estado === 'AUTORIZADO') {
+              numeroAutorizacion = autorizacion.numeroAutorizacion;
+              estadoFinal = 'autorizado';
+            }
+          }
+        }
+
+        await Operation.updateAuthorizationResponse(operation.id, authorizationResult, numeroAutorizacion);
+
+        console.log(`🎉 Proceso completado. Estado final: ${estadoFinal}`);
+
+        // Respuesta completa
+        const finalOperation = await Operation.findById(operation.id);
+        const documents = await Document.findByOperationId(operation.id);
+
+        const response = {
+          operation: finalOperation.toJSON(),
+          documents: documents.map(doc => doc.toPublicJSON()),
+          billingInfo: {
+            accessKey,
+            authorizationNumber: numeroAutorizacion,
+            status: estadoFinal,
+            receptionResponse: receptionResult,
+            authorizationResponse: authorizationResult
+          }
+        };
+
+        const message = estadoFinal === 'autorizado' 
+          ? 'Factura generada, firmada y autorizada exitosamente'
+          : 'Factura generada y firmada, pero no autorizada por el SRI';
+
+        return created(res, response, message);
+
+      } catch (sriError) {
+        console.error('❌ Error comunicándose con el SRI:', sriError.message);
+        await Operation.updateStatus(operation.id, 'error', `Error SRI: ${sriError.message}`);
+        
+        // Responder con éxito del firmado aunque falle el SRI
+        const finalOperation = await Operation.findById(operation.id);
+        const documents = await Document.findByOperationId(operation.id);
+
+        const response = {
+          operation: finalOperation.toJSON(),
+          documents: documents.map(doc => doc.toPublicJSON()),
+          billingInfo: {
+            accessKey,
+            authorizationNumber: null,
+            status: 'firmado',
+            receptionResponse: null,
+            authorizationResponse: null
+          },
+          warnings: [`Error comunicándose con el SRI: ${sriError.message}`]
+        };
+
+        return created(res, response, 'Factura generada y firmada exitosamente (error en SRI)');
+      }
+
+    } catch (signError) {
+      console.error('❌ Error específico en firmado:', signError.message);
+      console.error('❌ Stack completo:', signError.stack);
+      
+      // Información detallada del error
+      if (signError.message.includes('attributes')) {
+        console.error('❌ Error relacionado con atributos del certificado');
+        console.error('❌ Posibles causas:');
+        console.error('   - Certificado corrupto o inválido');
+        console.error('   - Contraseña incorrecta');
+        console.error('   - Formato de certificado no compatible');
+      }
+      
+      await Operation.updateStatus(operation.id, 'error', `Error firmado: ${signError.message}`);
+      
+      // Responder con error específico de firmado
+      const finalOperation = await Operation.findById(operation.id);
+      const documents = await Document.findByOperationId(operation.id);
+
+      const response = {
+        operation: finalOperation.toJSON(),
+        documents: documents.map(doc => doc.toPublicJSON()),
+        billingInfo: {
+          accessKey,
+          authorizationNumber: null,
+          status: 'error',
+          receptionResponse: null,
+          authorizationResponse: null
+        },
+        warnings: [`Error en firmado: ${signError.message}`]
+      };
+
+      return created(res, response, 'Factura generada pero no se pudo firmar');
     }
 
-    await Operation.updateAuthorizationResponse(operation.id, authorizationResult, numeroAutorizacion);
-
-    console.log(`🧾 Proceso completado. Estado final: ${estadoFinal}`);
-
-    // 16. Preparar respuesta
-    const finalOperation = await Operation.findById(operation.id);
-    const documents = await Document.findByOperationId(operation.id);
-
-    const response = {
-      operation: finalOperation.toJSON(),
-      documents: documents.map(doc => doc.toPublicJSON()),
-      billingInfo: {
-        accessKey,
-        authorizationNumber: numeroAutorizacion,
-        status: estadoFinal,
-        receptionResponse: receptionResult,
-        authorizationResponse: authorizationResult
-      },
-      warnings: req.billingWarnings || []
-    };
-
-    const message = estadoFinal === 'autorizado' 
-      ? 'Factura generada y autorizada exitosamente'
-      : 'Factura generada pero no autorizada por el SRI';
-
-    return created(res, response, message);
-
   } catch (error) {
-    console.error('❌ Error en proceso de facturación:', error);
+    console.error('❌ Error general:', error.message);
 
-    // Actualizar estado de operación si existe
     if (operation) {
       await Operation.updateStatus(operation.id, 'error', error.message);
     }
 
-    // Determinar tipo de error
-    let errorMessage = 'Error procesando la factura';
-    if (error.message.includes('certificate') || error.message.includes('p12')) {
-      errorMessage = 'Error con el certificado digital';
-    } else if (error.message.includes('SRI') || error.message.includes('SOAP')) {
-      errorMessage = 'Error comunicándose con el SRI';
-    } else if (error.message.includes('XML')) {
-      errorMessage = 'Error generando o firmando el XML';
-    }
-
-    return serverError(res, errorMessage, error.message);
+    return serverError(res, 'Error procesando la factura', error.message);
   }
 });
 
@@ -292,14 +342,12 @@ const generateSequential = (providedSequential) => {
     return String(providedSequential).padStart(9, '0');
   }
   
-  // Generar secuencial automático basado en timestamp
   const timestamp = Date.now();
   const sequential = timestamp.toString().slice(-9);
   return sequential.padStart(9, '0');
 };
 
 const parseDate = (dateString) => {
-  // Convertir DD/MM/YYYY a YYYY-MM-DD para MySQL
   const [day, month, year] = dateString.split('/');
   return `${year}-${month}-${day}`;
 };
