@@ -2,16 +2,16 @@
 # Usar con REST Client extension en VS Code o Postman
 
 ### 1. Health Check
-GET http://localhost:3000/health
+GET http://localhost:3006/health
 
 ### 2. Información de la API
-GET http://localhost:3000/api
+GET http://localhost:3006/api
 
 ### 3. Verificar disponibilidad de RUC
-GET http://localhost:3000/api/users/check-ruc/1234567890001
+GET http://localhost:3006/api/users/check-ruc/1234567890001
 
 ### 4. Registrar nuevo usuario
-POST http://localhost:3000/api/users/register
+POST http://localhost:3006/api/users/register
 Content-Type: application/json
 
 {
@@ -28,19 +28,19 @@ Content-Type: application/json
 }
 
 ### 5. Obtener usuario por ID
-GET http://localhost:3000/api/users/1
+GET http://localhost:3006/api/users/1
 
 ### 6. Obtener usuario por RUC
-GET http://localhost:3000/api/users/ruc/1234567890001
+GET http://localhost:3006/api/users/ruc/1234567890001
 
 ### 7. Listar todos los usuarios
-GET http://localhost:3000/api/users
+GET http://localhost:3006/api/users
 
 ### 8. Listar usuarios con paginación
-GET http://localhost:3000/api/users?page=1&limit=5
+GET http://localhost:3006/api/users?page=1&limit=5
 
 ### 9. Actualizar usuario
-PUT http://localhost:3000/api/users/1
+PUT http://localhost:3006/api/users/1
 Content-Type: application/json
 
 {
@@ -50,10 +50,10 @@ Content-Type: application/json
 }
 
 ### 10. Obtener estado del certificado
-GET http://localhost:3000/api/users/1/certificate
+GET http://localhost:3006/api/users/1/certificate
 
 ### 11. Activar certificado (sin certificado aún)
-PUT http://localhost:3000/api/users/1/certificate/toggle
+PUT http://localhost:3006/api/users/1/certificate/toggle
 Content-Type: application/json
 
 {
@@ -61,7 +61,7 @@ Content-Type: application/json
 }
 
 ### 12. Intentar registrar RUC duplicado (debe fallar)
-POST http://localhost:3000/api/users/register
+POST http://localhost:3006/api/users/register
 Content-Type: application/json
 
 {
@@ -71,7 +71,7 @@ Content-Type: application/json
 }
 
 ### 13. Intentar registrar con datos inválidos (debe fallar)
-POST http://localhost:3000/api/users/register
+POST http://localhost:3006/api/users/register
 Content-Type: application/json
 
 {

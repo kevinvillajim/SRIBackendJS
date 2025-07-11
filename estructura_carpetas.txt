@@ -1,0 +1,73 @@
+Listado de rutas de carpetas
+El n�mero de serie del volumen es 204F-F5E4
+C:.
+|   .env
+|   .env.example
+|   .gitignore
+|   estructura_carpetas.txt
+|   package-lock.json
+|   package.json
+|   README.md
+|   
++---database
+|       schema.sql
+|       
++---docs
+|       billing-api.md
+|       certificates-api.md
+|       users-api.md
+|       
++---examples
+|       invoice-example.json
+|              
++---src
+|   |   app.js
+|   |   server.js
+|   |   
+|   +---config
+|   |       database.js
+|   |       env.js
+|   |       
+|   +---controllers
+|   |       billingController.js
+|   |       certificateController.js
+|   |       userController.js
+|   |       
+|   +---middleware
+|   |       billingValidator.js
+|   |       errorHandler.js
+|   |       upload.js
+|   |       validation.js
+|   |       
+|   +---models
+|   |       Document.js
+|   |       Operation.js
+|   |       User.js
+|   |       
+|   +---routes
+|   |       billing.js
+|   |       certificates.js
+|   |       index.js
+|   |       users.js
+|   |       
+|   \---utils
+|           certificateValidator.js
+|           encryption.js
+|           FirmaECService.js
+|           logger.js
+|           responses.js
+|           SigningService.js
+|           UanatacaSigner.js
+|           
++---tests
+|       billing-tests.http
+|       certificate-tests.http
+|       user-tests.http
+|       
+\---uploads
+    +---certificates
+    |       2_1752130286725.p12
+    |       
+    \---xml
+            temp_0710202501179320414400110020010000000013807906916.xml
+            
