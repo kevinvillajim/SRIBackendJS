@@ -142,11 +142,85 @@ const generateCompleteBilling = asyncHandler(async (req, res) => {
 
 		console.log("✅ Namespace agregado para SRI");
 
-		// 🔧 DEBUG: Mostrar XML generado
-		console.log("🔍 XML GENERADO:");
-		console.log("=".repeat(50)); // ✅ Arreglar esto también
-		console.log(invoiceXml);
-		console.log("=".repeat(50));
+		// En billingController.js, después de crear el XML:
+console.log("🔍 XML COMPLETO GENERADO:");
+console.log("=" + "=".repeat(100) + "=");
+console.log(invoiceXml);
+console.log("=" + "=".repeat(100) + "=");
+
+// También mostrar el XML del ejemplo para comparar:
+const ejemploXML = `<?xml version="1.0" encoding="UTF-8"?>
+<factura id="comprobante" version="1.1.0">
+  <infoTributaria>
+    <ambiente>1</ambiente>
+    <tipoEmision>1</tipoEmision>
+    <razonSocial>BUSINESSCONNECT S.A.S.</razonSocial>
+    <nombreComercial>BUSINESSCONNECT</nombreComercial>
+    <ruc>1793204144001</ruc>
+    <claveAcceso>0907202501179320414400110010010009279056621415314</claveAcceso>
+    <codDoc>01</codDoc>
+    <estab>001</estab>
+    <ptoEmi>001</ptoEmi>
+    <secuencial>000927905</secuencial>
+    <dirMatriz>RAMIREZ DAVALOS Y AV. AMAZONAS EDIFICIO CENTRO AMAZONAS OF. 402</dirMatriz>
+    <contribuyenteRimpe>CONTRIBUYENTE RÉGIMEN RIMPE</contribuyenteRimpe>
+  </infoTributaria>
+  <infoFactura>
+    <fechaEmision>09/07/2025</fechaEmision>
+    <dirEstablecimiento>RAMIREZ DAVALOS Y AV. AMAZONAS EDIFICIO CENTRO AMAZONAS OF. 402</dirEstablecimiento>
+    <obligadoContabilidad>SI</obligadoContabilidad>
+    <tipoIdentificacionComprador>05</tipoIdentificacionComprador>
+    <razonSocialComprador>Kevin Villacreses</razonSocialComprador>
+    <identificacionComprador>1720598877</identificacionComprador>
+    <totalSinImpuestos>100.00</totalSinImpuestos>
+    <totalDescuento>0.00</totalDescuento>
+    <totalConImpuestos>
+      <totalImpuesto>
+        <codigo>2</codigo>
+        <codigoPorcentaje>4</codigoPorcentaje>
+        <baseImponible>100.00</baseImponible>
+        <tarifa>15.00</tarifa>
+        <valor>15.00</valor>
+      </totalImpuesto>
+    </totalConImpuestos>
+    <propina>0.00</propina>
+    <importeTotal>115.00</importeTotal>
+    <moneda>DOLAR</moneda>
+    <pagos>
+      <pago>
+        <formaPago>01</formaPago>
+        <total>115.00</total>
+      </pago>
+    </pagos>
+  </infoFactura>
+  <detalles>
+    <detalle>
+      <codigoPrincipal>SERV001</codigoPrincipal>
+      <descripcion>SERVICIO DE PRUEBA FIRMADOR</descripcion>
+      <cantidad>1.000000</cantidad>
+      <precioUnitario>100.000000</precioUnitario>
+      <descuento>0.00</descuento>
+      <precioTotalSinImpuesto>100.00</precioTotalSinImpuesto>
+      <impuestos>
+        <impuesto>
+          <codigo>2</codigo>
+          <codigoPorcentaje>4</codigoPorcentaje>
+          <tarifa>15.00</tarifa>
+          <baseImponible>100.00</baseImponible>
+          <valor>15.00</valor>
+        </impuesto>
+      </impuestos>
+    </detalle>
+  </detalles>
+  <infoAdicional>
+    <campoAdicional nombre="PRUEBA">Factura generada para probar firmador corregido</campoAdicional>
+  </infoAdicional>
+</factura>`;
+
+console.log("🔍 XML EJEMPLO QUE FUNCIONA:");
+console.log("=" + "=".repeat(100) + "=");
+console.log(ejemploXML);
+console.log("=" + "=".repeat(100) + "=");
 
 		operation = await Operation.create({
 			usuario_id: userId,
@@ -178,6 +252,11 @@ const generateCompleteBilling = asyncHandler(async (req, res) => {
 
 		console.log("✅ XML firmado exitosamente");
 		await Operation.updateStatus(operation.id, "firmado");
+		// Después del firmado exitoso:
+console.log("🔍 XML FIRMADO COMPLETO:");
+console.log("=".repeat(100));
+console.log(signingResult.signedXml);
+console.log("=".repeat(100));
 
 		// Guardar XML firmado
 		await Document.create({
