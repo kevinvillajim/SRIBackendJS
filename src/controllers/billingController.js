@@ -117,25 +117,44 @@ const generateCompleteBilling = asyncHandler(async (req, res) => {
 			}),
 		};
 
-		// 4️⃣ GENERAR XML (dejar que open-factura genere la clave)
-		console.log("📄 Generando XML con open-factura...");
+		console.log("📄 Generando XML con generador propio...");
 
-		// 🔧 CONVERTIR FECHA AL FORMATO QUE ENTIENDE OPEN-FACTURA
-		const fechaOriginal = billingData.infoFactura.fechaEmision; // "14/07/2025"
-		const [dia, mes, año] = fechaOriginal.split("/");
-		const fechaParaOpenFactura = `${año}-${mes}-${dia}`; // "2025-07-14"
+		const {createInvoice} = require("../utils/sriXmlGenerator");
 
-		console.log(
-			`📅 Fecha original: ${fechaOriginal} -> Convertida: ${fechaParaOpenFactura}`
+		const {xml, claveAcceso: accessKey} = createInvoice({
+			infoTributaria: {
+				ambiente: user.ambiente,
+				tipoEmision: "1",
+				razonSocial: user.razon_social,
+				nombreComercial: user.nombre_comercial || user.razon_social,
+				ruc: user.ruc,
+				estab: user.establecimiento,
+				ptoEmi: user.punto_emision,
+				secuencial: generateSequential(billingData.secuencial),
+				dirMatriz: user.direccion_matriz,
+			},
+			infoFactura: billingData.infoFactura, // Fecha mantiene formato DD/MM/YYYY
+			detalles: billingData.detalles,
+		});
+
+		let invoiceXml = xml;
+
+		// 1. Eliminar NaN (si aparece)
+		invoiceXml = invoiceXml.replace(/NaN/g, "");
+
+		// 2. Agregar namespace OBLIGATORIO para SRI
+		invoiceXml = invoiceXml.replace(
+			'<factura id="comprobante" version="1.1.0">',
+			'<factura xmlns:ds="http://www.w3.org/2000/09/xmldsig#" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" id="comprobante" version="1.1.0">'
 		);
 
-		// Actualizar la fecha en invoiceInput
-		invoiceInput.infoFactura.fechaEmision = fechaParaOpenFactura;
+		console.log("✅ Namespace agregado para SRI");
 
-		const {invoice, accessKey} = generateInvoice(invoiceInput);
-		const invoiceXml = generateInvoiceXml(invoice);
-		console.log("✅ XML generado. Clave temporal:", accessKey);
-		console.log("📄 XML tamaño:", invoiceXml.length, "caracteres");
+		// 🔧 DEBUG: Mostrar XML generado
+		console.log("🔍 XML GENERADO:");
+		console.log("=".repeat(50)); // ✅ Arreglar esto también
+		console.log(invoiceXml);
+		console.log("=".repeat(50));
 
 		operation = await Operation.create({
 			usuario_id: userId,
@@ -213,8 +232,10 @@ const generateCompleteBilling = asyncHandler(async (req, res) => {
 				estado: receptionResult.estado || "RECIBIDA",
 			});
 
-			// Verificar si fue recibida
-			if (receptionResult.estado === "RECIBIDA") {
+			const estado =
+				receptionResult?.RespuestaRecepcionComprobante?.estado || "NO_RECIBIDA";
+			console.log("🔍 Estado real:", estado);
+			if (estado === "RECIBIDA") {
 				await Operation.updateStatus(operation.id, "recibido_sri");
 
 				// Esperar antes de consultar autorización
