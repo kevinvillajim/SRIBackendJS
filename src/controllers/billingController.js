@@ -139,14 +139,6 @@ const generateCompleteBilling = asyncHandler(async (req, res) => {
 
 		let invoiceXml = xml;
 
-		// 1. Eliminar NaN (si aparece)
-		invoiceXml = invoiceXml.replace(/NaN/g, "");
-
-		// 2. Agregar namespace OBLIGATORIO para SRI
-		invoiceXml = invoiceXml.replace(
-			'<factura id="comprobante" version="1.1.0">',
-			'<factura xmlns:ds="http://www.w3.org/2000/09/xmldsig#" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" id="comprobante" version="1.1.0">'
-		);
 
 		console.log("✅ Namespace agregado para SRI");
 
