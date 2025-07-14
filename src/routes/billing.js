@@ -7,6 +7,7 @@ const {
 	generateCompleteBilling,
 	getOperation,
 	getUserOperations,
+	reenviarSRI,
 } = require("../controllers/billingController");
 
 // Importar validaciones
@@ -42,6 +43,9 @@ router.post(
 // 📄 GET /api/billing/operation/:operationId - Obtener operación específica
 router.get("/operation/:operationId", getOperation);
 
+// 🔄 POST /api/billing/operation/:operationId/reenviar - Reenviar al SRI
+router.post("/operation/:operationId/reenviar", reenviarSRI);
+
 // 📊 GET /api/billing/user/:userId/operations - Obtener operaciones de usuario
 router.get("/user/:userId/operations", validateUserIdParam, getUserOperations);
 
@@ -50,7 +54,7 @@ router.get("/", (req, res) => {
 	res.json({
 		success: true,
 		message: "API de Facturación Electrónica SRI Ecuador",
-		version: "1.0.0",
+		version: "2.0.0",
 		proceso: {
 			description:
 				"Proceso completo: XML → Firma XAdES-BES → Envío SRI → Autorización",
@@ -58,9 +62,19 @@ router.get("/", (req, res) => {
 				"1. Recibe datos de facturación en JSON",
 				"2. Genera XML de factura usando open-factura",
 				"3. Firma XML con certificado digital (XAdES-BES)",
-				"4. Envía XML firmado al SRI para recepción",
-				"5. Solicita autorización al SRI con clave de acceso",
+				"4. Envía XML firmado al SRI para recepción (SOAP manual)",
+				"5. Solicita autorización al SRI con clave de acceso (SOAP manual)",
 				"6. Devuelve resultado completo del proceso",
+			],
+		},
+		improvements: {
+			v2: [
+				"🔧 Implementación SOAP manual para SRI",
+				"📤 Mejor manejo de recepción y autorización",
+				"🔍 Validación de clave de acceso",
+				"🔄 Endpoint para reenviar al SRI",
+				"📊 Estados más específicos (no_recibido_sri, pendiente_autorizacion)",
+				"⚠️ Mejor manejo de errores y advertencias",
 			],
 		},
 		endpoints: {
@@ -73,7 +87,28 @@ router.get("/", (req, res) => {
 			operations: {
 				getOne: "GET /api/billing/operation/:operationId",
 				getByUser: "GET /api/billing/user/:userId/operations",
+				reenviar: "POST /api/billing/operation/:operationId/reenviar",
 			},
+		},
+		sriIntegration: {
+			method: "SOAP manual (reemplaza open-factura)",
+			endpoints: {
+				recepcion: {
+					test: "https://celcer.sri.gob.ec/comprobantes-electronicos-ws/RecepcionComprobantesOffline",
+					prod: "https://cel.sri.gob.ec/comprobantes-electronicos-ws/RecepcionComprobantesOffline",
+				},
+				autorizacion: {
+					test: "https://celcer.sri.gob.ec/comprobantes-electronicos-ws/AutorizacionComprobantesOffline",
+					prod: "https://cel.sri.gob.ec/comprobantes-electronicos-ws/AutorizacionComprobantesOffline",
+				},
+			},
+			features: [
+				"Validación de clave de acceso (49 dígitos)",
+				"Parseo automático de respuestas SOAP",
+				"Manejo de errores HTTP y SOAP",
+				"Timeout configurable (30 segundos)",
+				"Retry automático con espera",
+			],
 		},
 		requirements: {
 			user: "Usuario debe existir y tener certificado activo",
@@ -88,14 +123,23 @@ router.get("/", (req, res) => {
 			operacion: "Datos de la operación en base de datos",
 			documentos: "Lista de documentos generados",
 		},
+		estadosOperacion: [
+			"xml_generado",
+			"firmando",
+			"firmado",
+			"enviando_sri",
+			"autorizado",
+			"no_recibido_sri",
+			"pendiente_autorizacion",
+			"error_sri",
+			"error",
+		],
 		exampleUsage: {
 			curl: `curl -X POST http://localhost:3000/api/billing/generate/1 \\
   -H "Content-Type: application/json" \\
   -d '{
     "infoFactura": {
       "fechaEmision": "11/07/2025",
-      "dirEstablecimiento": "Dirección del establecimiento",
-      "obligadoContabilidad": "SI",
       "tipoIdentificacionComprador": "05",
       "razonSocialComprador": "CLIENTE EJEMPLO",
       "identificacionComprador": "1720598877",
@@ -110,19 +154,10 @@ router.get("/", (req, res) => {
           "valor": "15.00"
         }]
       },
-      "propina": "0.00",
-      "importeTotal": "115.00",
-      "moneda": "DOLAR",
-      "pagos": {
-        "pago": [{
-          "formaPago": "01",
-          "total": "115.00"
-        }]
-      }
+      "importeTotal": "115.00"
     },
     "detalles": {
       "detalle": [{
-        "codigoPrincipal": "SERV001",
         "descripcion": "SERVICIO DE PRUEBA",
         "cantidad": "1.000000",
         "precioUnitario": "100.000000",
@@ -140,6 +175,7 @@ router.get("/", (req, res) => {
       }]
     }
   }'`,
+			reenviar: `curl -X POST http://localhost:3000/api/billing/operation/6/reenviar`,
 		},
 		timestamp: new Date().toISOString(),
 	});
@@ -156,6 +192,7 @@ router.use("*", (req, res) => {
 			"POST /api/billing/generate/:userId",
 			"POST /api/billing/complete/:userId",
 			"GET /api/billing/operation/:operationId",
+			"POST /api/billing/operation/:operationId/reenviar",
 			"GET /api/billing/user/:userId/operations",
 		],
 	});

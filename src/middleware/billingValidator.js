@@ -1,30 +1,34 @@
 const {createError} = require("./errorHandler");
 
-// Validar datos básicos de facturación según estructura real del SRI
+// Validar datos básicos de facturación según XSD real del SRI
 const validateBillingData = (req, res, next) => {
 	const errors = [];
-	const {infoFactura, detalles, infoAdicional} = req.body;
+	const {infoFactura, detalles} = req.body;
 
 	// Validar información de factura (obligatoria)
 	if (!infoFactura) {
 		errors.push("infoFactura es obligatoria");
 	} else {
-		// Campos obligatorios según el XML real del SRI
+		// Campos REALMENTE obligatorios según XSD del SRI
 		const requiredFields = [
-			"fechaEmision",
-			"dirEstablecimiento",
-			"obligadoContabilidad",
-			"tipoIdentificacionComprador",
-			"razonSocialComprador",
-			"identificacionComprador",
-			// 'direccionComprador', // NO es obligatorio en SRI
-			"totalSinImpuestos",
-			"totalDescuento",
-			"totalConImpuestos",
-			"importeTotal",
-			"moneda",
-			"pagos",
+			"fechaEmision", // obligatorio
+			"tipoIdentificacionComprador", // obligatorio
+			"razonSocialComprador", // obligatorio
+			"identificacionComprador", // obligatorio
+			"totalSinImpuestos", // obligatorio
+			"totalDescuento", // obligatorio
+			"totalConImpuestos", // obligatorio
+			"importeTotal", // obligatorio
 		];
+
+		// Campos opcionales que NO son obligatorios según XSD
+		// dirEstablecimiento - minOccurs="0"
+		// contribuyenteEspecial - minOccurs="0"
+		// obligadoContabilidad - minOccurs="0"
+		// comercioExterior - minOccurs="0"
+		// direccionComprador - minOccurs="0"
+		// moneda - minOccurs="0"
+		// pagos - minOccurs="0"
 
 		requiredFields.forEach((field) => {
 			if (
@@ -44,7 +48,7 @@ const validateBillingData = (req, res, next) => {
 			errors.push("infoFactura.fechaEmision debe tener formato DD/MM/YYYY");
 		}
 
-		// Validar obligado contabilidad
+		// Validar obligado contabilidad SOLO si está presente
 		if (
 			infoFactura.obligadoContabilidad &&
 			!["SI", "NO"].includes(infoFactura.obligadoContabilidad)
@@ -75,7 +79,7 @@ const validateBillingData = (req, res, next) => {
 			}
 		});
 
-		// Validar propina si está presente
+		// Validar propina si está presente (es opcional)
 		if (
 			infoFactura.propina !== undefined &&
 			isNaN(parseFloat(infoFactura.propina))
@@ -118,10 +122,10 @@ const validateBillingData = (req, res, next) => {
 			}
 		}
 
-		// Validar pagos
+		// Validar pagos SOLO si están presentes (son opcionales)
 		if (infoFactura.pagos) {
 			if (!infoFactura.pagos.pago || !Array.isArray(infoFactura.pagos.pago)) {
-				errors.push("infoFactura.pagos.pago debe ser un array");
+				errors.push("infoFactura.pagos.pago debe ser un array si se incluye");
 			} else {
 				// Validar cada pago
 				infoFactura.pagos.pago.forEach((pago, index) => {
@@ -151,15 +155,17 @@ const validateBillingData = (req, res, next) => {
 		} else {
 			// Validar cada detalle
 			detalles.detalle.forEach((detalle, index) => {
+				// Campos obligatorios según XSD
 				const requiredDetailFields = [
-					"codigoPrincipal",
-					"descripcion",
-					"cantidad",
-					"precioUnitario",
-					"descuento",
-					"precioTotalSinImpuesto",
-					"impuestos",
+					"descripcion", // obligatorio
+					"cantidad", // obligatorio
+					"precioUnitario", // obligatorio
+					"descuento", // obligatorio
+					"precioTotalSinImpuesto", // obligatorio
+					"impuestos", // obligatorio
 				];
+
+				// codigoPrincipal y codigoAuxiliar son opcionales según XSD (minOccurs="0")
 
 				requiredDetailFields.forEach((field) => {
 					if (
@@ -233,9 +239,12 @@ const validateUserIdParam = (req, res, next) => {
 const sanitizeBillingData = (req, res, next) => {
 	// Sanitizar strings en infoFactura
 	if (req.body.infoFactura) {
-		const stringFields = ["razonSocialComprador", "dirEstablecimiento"];
+		const stringFields = ["razonSocialComprador"];
 
-		// Solo sanitizar direccionComprador si existe (no es obligatorio)
+		// Solo sanitizar campos opcionales si existen
+		if (req.body.infoFactura.dirEstablecimiento) {
+			stringFields.push("dirEstablecimiento");
+		}
 		if (req.body.infoFactura.direccionComprador) {
 			stringFields.push("direccionComprador");
 		}
@@ -263,9 +272,15 @@ const sanitizeBillingData = (req, res, next) => {
 			}
 		});
 
-		// Asegurar que propina tenga valor por defecto
+		// Asegurar valores por defecto para campos opcionales comunes
 		if (req.body.infoFactura.propina === undefined) {
 			req.body.infoFactura.propina = "0.00";
+		}
+		if (req.body.infoFactura.obligadoContabilidad === undefined) {
+			req.body.infoFactura.obligadoContabilidad = "NO";
+		}
+		if (req.body.infoFactura.moneda === undefined) {
+			req.body.infoFactura.moneda = "DOLAR";
 		}
 	}
 
