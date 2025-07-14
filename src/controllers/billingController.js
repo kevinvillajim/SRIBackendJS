@@ -12,117 +12,26 @@ const {
 const {decryptCertificatePassword} = require("../utils/encryption");
 const {certificateFileExists} = require("../middleware/upload");
 const SRISigningService = require("../services/SRISigningService");
-const {config} = require("../config/env");
+const {config, getEcuadorTime} = require("../config/env");
 const axios = require("axios");
 
-// Importar funciones de open-factura solo para generación de XML
-const {generateInvoice, generateInvoiceXml} = require("open-factura");
-
+// Importar funciones de open-factura
+const {
+	generateInvoice,
+	generateInvoiceXml,
+	documentReception,
+	documentAuthorization,
+} = require("open-factura");
 // Inicializar servicio de firmado
 const signingService = new SRISigningService();
 
-// 🔧 SOAP MANUAL PARA SRI (reemplaza open-factura bugueada)
-async function enviarAlSRI(xmlBase64, ambiente = "1") {
-	const endpoint =
-		ambiente === "1"
-			? "https://celcer.sri.gob.ec/comprobantes-electronicos-ws/RecepcionComprobantesOffline"
-			: "https://cel.sri.gob.ec/comprobantes-electronicos-ws/RecepcionComprobantesOffline";
-
-	const soap = `<?xml version="1.0" encoding="UTF-8"?>
-<soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/" xmlns:ec="http://ec.gob.sri.ws.recepcion">
-  <soapenv:Header/>
-  <soapenv:Body>
-    <ec:validarComprobante>
-      <xml>${xmlBase64}</xml>
-    </ec:validarComprobante>
-  </soapenv:Body>
-</soapenv:Envelope>`;
-
-	try {
-		const response = await axios.post(endpoint, soap, {
-			headers: {
-				"Content-Type": "text/xml; charset=utf-8",
-				SOAPAction: "",
-			},
-			timeout: 30000,
-		});
-
-		return {
-			success: true,
-			status: response.status,
-			data: response.data,
-		};
-	} catch (error) {
-		throw new Error(`Error SRI Recepción: ${error.message}`);
-	}
-}
-
-async function consultarAutorizacion(claveAcceso, ambiente = "1") {
-	const endpoint =
-		ambiente === "1"
-			? "https://celcer.sri.gob.ec/comprobantes-electronicos-ws/AutorizacionComprobantesOffline"
-			: "https://cel.sri.gob.ec/comprobantes-electronicos-ws/AutorizacionComprobantesOffline";
-
-	const soap = `<?xml version="1.0" encoding="UTF-8"?>
-<soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/" xmlns:ec="http://ec.gob.sri.ws.autorizacion">
-  <soapenv:Header/>
-  <soapenv:Body>
-    <ec:autorizacionComprobante>
-      <claveAccesoComprobante>${claveAcceso}</claveAccesoComprobante>
-    </ec:autorizacionComprobante>
-  </soapenv:Body>
-</soapenv:Envelope>`;
-
-	try {
-		const response = await axios.post(endpoint, soap, {
-			headers: {
-				"Content-Type": "text/xml; charset=utf-8",
-				SOAPAction: "",
-			},
-			timeout: 30000,
-		});
-
-		// Parseo simple de la respuesta
-		const data = response.data;
-
-		// Buscar numeroComprobantes
-		const numeroComprobantesMatch = data.match(
-			/<numeroComprobantes>(\d+)<\/numeroComprobantes>/
-		);
-		const numeroComprobantes = numeroComprobantesMatch
-			? parseInt(numeroComprobantesMatch[1])
-			: 0;
-
-		// Buscar número de autorización
-		const autorizacionMatch = data.match(
-			/<numeroAutorizacion>([^<]+)<\/numeroAutorizacion>/
-		);
-		const numeroAutorizacion = autorizacionMatch ? autorizacionMatch[1] : null;
-
-		// Buscar estado
-		const estadoMatch = data.match(/<estado>([^<]+)<\/estado>/);
-		const estado = estadoMatch ? estadoMatch[1] : null;
-
-		return {
-			success: true,
-			numeroComprobantes,
-			numeroAutorizacion,
-			autorizado: estado === "AUTORIZADO",
-			estado,
-			rawResponse: data,
-		};
-	} catch (error) {
-		throw new Error(`Error SRI Autorización: ${error.message}`);
-	}
-}
-
-// 🎯 ENDPOINT PRINCIPAL: Generar factura completa con todo el proceso SRI
+// 🎯 ENDPOINT PRINCIPAL: Proceso simple de facturación
 const generateCompleteBilling = asyncHandler(async (req, res) => {
 	const {userId} = req.params;
 	const billingData = req.body;
 
 	console.log(
-		"🧾 Iniciando proceso COMPLETO de facturación para usuario:",
+		"🧾 Iniciando proceso SIMPLE de facturación para usuario:",
 		userId
 	);
 
@@ -149,7 +58,7 @@ const generateCompleteBilling = asyncHandler(async (req, res) => {
 	let operation = null;
 
 	try {
-		// 3️⃣ PREPARAR DATOS PARA GENERAR XML
+		// 3️⃣ PREPARAR DATOS PARA GENERAR XML (SIN clave de acceso)
 		const invoiceInput = {
 			infoTributaria: {
 				ambiente: user.ambiente,
@@ -208,38 +117,34 @@ const generateCompleteBilling = asyncHandler(async (req, res) => {
 			}),
 		};
 
-		// 4️⃣ GENERAR FACTURA Y XML
-		console.log("📄 Generando factura...");
+		// 4️⃣ GENERAR XML (dejar que open-factura genere la clave)
+		console.log("📄 Generando XML con open-factura...");
+
+		// 🔧 CONVERTIR FECHA AL FORMATO QUE ENTIENDE OPEN-FACTURA
+		const fechaOriginal = billingData.infoFactura.fechaEmision; // "14/07/2025"
+		const [dia, mes, año] = fechaOriginal.split("/");
+		const fechaParaOpenFactura = `${año}-${mes}-${dia}`; // "2025-07-14"
+
+		console.log(
+			`📅 Fecha original: ${fechaOriginal} -> Convertida: ${fechaParaOpenFactura}`
+		);
+
+		// Actualizar la fecha en invoiceInput
+		invoiceInput.infoFactura.fechaEmision = fechaParaOpenFactura;
+
 		const {invoice, accessKey} = generateInvoice(invoiceInput);
-		console.log("✅ Factura generada. Clave de acceso:", accessKey);
+		const invoiceXml = generateInvoiceXml(invoice);
+		console.log("✅ XML generado. Clave temporal:", accessKey);
+		console.log("📄 XML tamaño:", invoiceXml.length, "caracteres");
 
-		// Verificar operación duplicada
-		const existingOperation = await Operation.findByAccessKey(accessKey);
-		if (existingOperation) {
-			return badRequest(
-				res,
-				"Ya existe una operación con esta clave de acceso",
-				{
-					accessKey,
-					existingOperationId: existingOperation.id,
-				}
-			);
-		}
-
-		// Crear operación en base de datos
 		operation = await Operation.create({
 			usuario_id: userId,
-			clave_acceso: accessKey,
+			clave_acceso: accessKey, // Clave temporal
 			numero_secuencial: invoiceInput.infoTributaria.secuencial,
 			fecha_emision: parseDate(billingData.infoFactura.fechaEmision),
 			total_factura: parseFloat(billingData.infoFactura.importeTotal),
 			estado: "xml_generado",
 		});
-
-		// Generar XML
-		console.log("🔨 Generando XML...");
-		const invoiceXml = generateInvoiceXml(invoice);
-		console.log("✅ XML generado, tamaño:", invoiceXml.length, "caracteres");
 
 		// Guardar XML original
 		await Document.create({
@@ -272,62 +177,94 @@ const generateCompleteBilling = asyncHandler(async (req, res) => {
 			clave_acceso: accessKey,
 		});
 
-		// 6️⃣ ENVIAR AL SRI usando SOAP manual
-		console.log("📤 Enviando al SRI usando SOAP manual...");
+		// 6️⃣ ENVIAR AL SRI usando open-factura (NO eliminar clave de acceso)
+		console.log("📤 Enviando al SRI usando open-factura nativo...");
 		await Operation.updateStatus(operation.id, "enviando_recepcion");
 
 		let receptionResult = null;
 		let authorizationResult = null;
-		let numeroAutorizacion = null;
 		let estadoFinal = "firmado";
 
 		try {
-			// RECEPCIÓN
-			console.log("🚀 Paso 1: Enviando a recepción SRI...");
-			receptionResult = await enviarAlSRI(
+			// Usar endpoints correctos según ambiente
+			const receptionUrl =
+				user.ambiente === "1"
+					? "https://celcer.sri.gob.ec/comprobantes-electronicos-ws/RecepcionComprobantesOffline?wsdl"
+					: "https://cel.sri.gob.ec/comprobantes-electronicos-ws/RecepcionComprobantesOffline?wsdl";
+
+			const authorizationUrl =
+				user.ambiente === "1"
+					? "https://celcer.sri.gob.ec/comprobantes-electronicos-ws/AutorizacionComprobantesOffline?wsdl"
+					: "https://cel.sri.gob.ec/comprobantes-electronicos-ws/AutorizacionComprobantesOffline?wsdl";
+
+			// RECEPCIÓN usando open-factura
+			console.log("🚀 Paso 1: Enviando a recepción SRI con open-factura...");
+			receptionResult = await documentReception(
 				signingResult.base64Xml,
-				user.ambiente
+				receptionUrl
 			);
-			console.log("✅ Recepción SRI exitosa");
+			console.log("✅ Recepción SRI exitosa:", receptionResult);
 
-			await Operation.updateReceptionResponse(operation.id, receptionResult);
-			await Operation.updateStatus(operation.id, "recibido_sri");
+			await Operation.updateReceptionResponse(operation.id, {
+				success: true,
+				status: 200,
+				data: JSON.stringify(receptionResult),
+				claveAcceso: accessKey,
+				estado: receptionResult.estado || "RECIBIDA",
+			});
 
-			// Esperar antes de consultar autorización
-			console.log("⏳ Esperando 3 segundos...");
-			await new Promise((resolve) => setTimeout(resolve, 3000));
+			// Verificar si fue recibida
+			if (receptionResult.estado === "RECIBIDA") {
+				await Operation.updateStatus(operation.id, "recibido_sri");
 
-			// AUTORIZACIÓN
-			console.log("🚀 Paso 2: Consultando autorización SRI...");
-			authorizationResult = await consultarAutorizacion(
-				accessKey,
-				user.ambiente
-			);
-			console.log("✅ Consulta autorización exitosa");
-			console.log("📊 Resultado:", authorizationResult);
+				// Esperar antes de consultar autorización
+				console.log("⏳ Esperando 5 segundos...");
+				await new Promise((resolve) => setTimeout(resolve, 5000));
 
-			if (
-				authorizationResult.autorizado &&
-				authorizationResult.numeroAutorizacion
-			) {
-				estadoFinal = "autorizado";
-				numeroAutorizacion = authorizationResult.numeroAutorizacion;
-				console.log("🎉 FACTURA AUTORIZADA! Número:", numeroAutorizacion);
-			} else if (authorizationResult.numeroComprobantes === 0) {
-				estadoFinal = "no_recibido_sri";
-				console.log("⚠️ El SRI no recibió el comprobante");
+				// AUTORIZACIÓN usando open-factura
+				console.log("🚀 Paso 2: Consultando autorización con open-factura...");
+				authorizationResult = await documentAuthorization(
+					accessKey,
+					authorizationUrl
+				);
+				console.log("✅ Consulta autorización exitosa:", authorizationResult);
+
+				// Determinar estado final
+				if (authorizationResult && authorizationResult.numeroAutorizacion) {
+					estadoFinal = "autorizado";
+					console.log(
+						"🎉 FACTURA AUTORIZADA! Número:",
+						authorizationResult.numeroAutorizacion
+					);
+				} else if (
+					authorizationResult &&
+					authorizationResult.estado === "AUTORIZADO"
+				) {
+					estadoFinal = "autorizado";
+					console.log("🎉 FACTURA AUTORIZADA!");
+				} else {
+					estadoFinal = "pendiente_autorizacion";
+					console.log("⏳ Pendiente de autorización");
+				}
+
+				await Operation.updateAuthorizationResponse(
+					operation.id,
+					{
+						success: true,
+						numeroComprobantes: 1,
+						numeroAutorizacion: authorizationResult?.numeroAutorizacion || null,
+						autorizado: estadoFinal === "autorizado",
+						estado: authorizationResult?.estado || null,
+						rawResponse: JSON.stringify(authorizationResult),
+					},
+					authorizationResult?.numeroAutorizacion || null
+				);
 			} else {
-				estadoFinal = "pendiente_autorizacion";
-				console.log("⏳ Pendiente de autorización");
+				estadoFinal = "devuelta_sri";
+				console.log("⚠️ Factura devuelta por SRI:", receptionResult.estado);
 			}
-
-			await Operation.updateAuthorizationResponse(
-				operation.id,
-				authorizationResult,
-				numeroAutorizacion
-			);
 		} catch (sriError) {
-			console.error("❌ Error en SRI:", sriError.message);
+			console.error("❌ Error en SRI con open-factura:", sriError.message);
 			await Operation.updateStatus(
 				operation.id,
 				"error_sri",
@@ -336,7 +273,7 @@ const generateCompleteBilling = asyncHandler(async (req, res) => {
 			estadoFinal = "error_sri";
 		}
 
-		// 9️⃣ ACTUALIZAR ESTADO FINAL Y PREPARAR RESPUESTA
+		// 7️⃣ ACTUALIZAR ESTADO FINAL Y PREPARAR RESPUESTA
 		await Operation.updateStatus(operation.id, estadoFinal);
 
 		const finalOperation = await Operation.findById(operation.id);
@@ -344,17 +281,16 @@ const generateCompleteBilling = asyncHandler(async (req, res) => {
 
 		console.log(`🏁 Proceso completado. Estado final: ${estadoFinal}`);
 
-		// RESPUESTA
 		const response = {
 			success: true,
 			proceso: {
 				estado: estadoFinal,
 				completado: true,
-				timestamp: new Date().toISOString(),
+				timestamp: getEcuadorTime(),
 			},
 			factura: {
 				claveAcceso: accessKey,
-				numeroAutorizacion: numeroAutorizacion,
+				numeroAutorizacion: authorizationResult?.numeroAutorizacion || null,
 				secuencial: invoiceInput.infoTributaria.secuencial,
 				fechaEmision: billingData.infoFactura.fechaEmision,
 				total: billingData.infoFactura.importeTotal,
@@ -364,7 +300,7 @@ const generateCompleteBilling = asyncHandler(async (req, res) => {
 				recepcion: receptionResult,
 				autorizacion: authorizationResult,
 				autorizado: estadoFinal === "autorizado",
-				numeroAutorizacion: numeroAutorizacion,
+				numeroAutorizacion: authorizationResult?.numeroAutorizacion || null,
 			},
 			firmado: {
 				exitoso: signingResult.success,
@@ -384,8 +320,8 @@ const generateCompleteBilling = asyncHandler(async (req, res) => {
 				message =
 					"🎉 Factura generada, firmada y AUTORIZADA por el SRI exitosamente";
 				break;
-			case "no_recibido_sri":
-				message = "⚠️ Factura generada y firmada, pero NO RECIBIDA por el SRI";
+			case "devuelta_sri":
+				message = "⚠️ Factura devuelta por el SRI - revisar datos";
 				httpStatus = 200;
 				break;
 			case "pendiente_autorizacion":
@@ -406,10 +342,10 @@ const generateCompleteBilling = asyncHandler(async (req, res) => {
 			success: true,
 			message,
 			data: response,
-			timestamp: new Date().toISOString(),
+			timestamp: getEcuadorTime(),
 		});
 	} catch (error) {
-		console.error("❌ Error general en proceso de facturación:", error.message);
+		console.error("❌ Error en proceso de facturación:", error.message);
 		console.error("❌ Stack:", error.stack);
 
 		if (operation) {
@@ -492,6 +428,72 @@ const parseDate = (dateString) => {
 	return `${year}-${month}-${day}`;
 };
 
+// Función para reenviar al SRI
+const reenviarSRI = asyncHandler(async (req, res) => {
+	const {operationId} = req.params;
+
+	const operation = await Operation.findById(operationId);
+	if (!operation) {
+		return notFound(res, "Operación no encontrada");
+	}
+
+	const documents = await Document.findByOperationId(operationId);
+	const firmadoDoc = documents.find((doc) => doc.tipo_documento === "firmado");
+
+	if (!firmadoDoc) {
+		return badRequest(res, "No se encontró documento firmado para reenviar");
+	}
+
+	try {
+		// Convertir XML firmado a base64
+		const base64Xml = Buffer.from(firmadoDoc.contenido_xml, "utf8").toString(
+			"base64"
+		);
+
+		// Obtener usuario para ambiente
+		const user = await User.findById(operation.usuario_id);
+
+		// Reenviar al SRI
+		const receptionResult = await enviarRecepcionSRI(base64Xml, user.ambiente);
+
+		if (receptionResult.claveAcceso) {
+			// Consultar autorización
+			await new Promise((resolve) => setTimeout(resolve, 3000));
+			const authResult = await consultarAutorizacionSRI(
+				receptionResult.claveAcceso,
+				user.ambiente
+			);
+
+			// Actualizar operación
+			await Operation.updateAuthorizationResponse(
+				operation.id,
+				authResult,
+				authResult.numeroAutorizacion
+			);
+
+			const estadoFinal = authResult.autorizado
+				? "autorizado"
+				: "pendiente_autorizacion";
+			await Operation.updateStatus(operation.id, estadoFinal);
+
+			return success(
+				res,
+				{
+					recepcion: receptionResult,
+					autorizacion: authResult,
+					estado: estadoFinal,
+				},
+				"Documento reenviado al SRI exitosamente"
+			);
+		} else {
+			throw new Error("No se obtuvo clave de acceso del SRI");
+		}
+	} catch (error) {
+		console.error("❌ Error reenviando al SRI:", error.message);
+		return serverError(res, "Error reenviando al SRI", error.message);
+	}
+});
+
 // Mantener compatibilidad
 const generateBilling = generateCompleteBilling;
 
@@ -500,4 +502,5 @@ module.exports = {
 	generateCompleteBilling,
 	getOperation,
 	getUserOperations,
+	reenviarSRI,
 };

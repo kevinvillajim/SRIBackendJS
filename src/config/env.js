@@ -12,8 +12,13 @@ const config = {
 		user: process.env.DB_USER || "root",
 		password: process.env.DB_PASSWORD || "",
 		database: process.env.DB_NAME || "facturacion_sri",
-		timezone: "Z",
+		timezone: "-05:00",
 		charset: "utf8mb4",
+	},
+
+	timezone: {
+		name: "America/Guayaquil", // ✅ Timezone de Ecuador
+		offset: "-05:00",
 	},
 
 	// Rutas de archivos
@@ -68,6 +73,30 @@ const config = {
 	},
 };
 
+const getEcuadorTime = () => {
+	return (
+		new Date()
+			.toLocaleString("en-CA", {
+				timeZone: "America/Guayaquil",
+				year: "numeric",
+				month: "2-digit",
+				day: "2-digit",
+				hour: "2-digit",
+				minute: "2-digit",
+				second: "2-digit",
+				hour12: false,
+			})
+			.replace(", ", "T") + "-05:00"
+	);
+};
+
+// ✅ Función para obtener timestamp para logs
+const getLogTimestamp = () => {
+	const date = new Date();
+	const ecuadorDate = new Date(date.getTime() - 5 * 60 * 60 * 1000); // UTC-5
+	return ecuadorDate.toISOString().replace("Z", "-05:00");
+};
+
 // Validar configuraciones críticas
 const validateConfig = () => {
   const required = [
@@ -90,9 +119,13 @@ const validateConfig = () => {
   }
   
   console.log('✅ Configuración validada correctamente');
+  console.log(`🕐 Timezone configurado: ${config.timezone.name} (${config.timezone.offset})`);
+  console.log(`⏰ Hora Ecuador actual: ${getEcuadorTime()}`);
 };
 
 module.exports = {
   config,
-  validateConfig
+  validateConfig,
+  getEcuadorTime,
+  getLogTimestamp
 };
